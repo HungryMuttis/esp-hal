@@ -82,31 +82,6 @@ pub struct Config<'t, S: TimerSpeed> {
 #[derive(Clone, Copy, Debug)]
 pub struct Unconfigured;
 
-impl Unconfigured {
-    /// Non generic configuration method for channel
-    fn configure(
-        number: Number,
-        timer_num: u8,
-        is_hs: bool,
-        duty: u32,
-        pin_config: DriveMode,
-        pin_out: interconnect::OutputSignal<'_>,
-    ) -> crate::gpio::PinGuard {
-        let ledc = LEDC::regs();
-        low_level::set_channel(ledc, number, timer_num, is_hs);
-        low_level::start_duty_without_fading(ledc, number, is_hs);
-        low_level::set_duty_hw(ledc, number, is_hs, duty);
-        low_level::update_channel(ledc, number, is_hs);
-
-        let output_signal = low_level::output_signal(number, is_hs);
-
-        let out_cfg = OutputConfig::default().with_drive_mode(pin_config);
-        pin_out.apply_output_config(&out_cfg);
-        pin_out.set_output_enable(true);
-        pin_out.connect_with_guard(output_signal)
-    }
-}
-
 /// Typestate indicating a configured channel.
 pub struct Configured {
     timer_duty: u8,
@@ -144,14 +119,19 @@ impl<S: TimerSpeed> Channel<S, Unconfigured> {
         let duty_range = 1u32 << timer_duty;
         let duty = config.duty.min(duty_range);
 
-        let pin_guard = Unconfigured::configure(
-            self.number,
-            timer_num,
-            S::IS_HS,
-            duty,
-            config.pin_config,
-            pin.into(),
-        );
+        let ledc = LEDC::regs();
+        low_level::set_channel(ledc, self.number, timer_num, S::IS_HS);
+        low_level::start_duty_without_fading(ledc, self.number, S::IS_HS);
+        low_level::set_duty_hw(ledc, self.number, S::IS_HS, duty);
+        low_level::update_channel(ledc, self.number, S::IS_HS);
+
+        let output_signal = low_level::output_signal(self.number, S::IS_HS);
+
+        let pin_out = pin.into();
+        let out_cfg = OutputConfig::default().with_drive_mode(config.pin_config);
+        pin_out.apply_output_config(&out_cfg);
+        pin_out.set_output_enable(true);
+        let pin_guard = pin_out.connect_with_guard(output_signal);
 
         Ok(Channel {
             _phantom: PhantomData,
