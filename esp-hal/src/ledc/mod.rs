@@ -29,35 +29,42 @@
 //! # {before_snippet}
 //! # use esp_hal::ledc::Ledc;
 //! # use esp_hal::ledc::LSGlobalClkSource;
-//! # use esp_hal::ledc::timer::{self, TimerIFace};
+//! # use esp_hal::ledc::timer::{self, TimerSpeed};
 //! # use esp_hal::ledc::LowSpeed;
-//! # use esp_hal::ledc::channel::{self, ChannelIFace};
+//! # use esp_hal::ledc::channel::{self};
 //! # use esp_hal::gpio::DriveMode;
-//! # let led = peripherals.GPIO0;
+//! # use esp_hal::time::Rate;
+//! # let led_pin = peripherals.GPIO0;
 //!
-//! let mut ledc = Ledc::new(peripherals.LEDC);
-//! ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
+//! // Create a new Ledc driver and initialize global slow clock.
+//! let mut ledc = Ledc::new(peripherals.LEDC, LSGlobalClkSource::APBClk);
 //!
-//! let mut lstimer0 = ledc.timer::<LowSpeed>(timer::Number::Timer0);
-//! lstimer0.configure(timer::config::Config {
-//!     duty: timer::config::Duty::Duty5Bit,
-//!     clock_source: timer::LSClockSource::APBClk,
+//! // Initialize a new timer.
+//! let timer0 = ledc.timer0.configure(timer::Config {
+//!     duty: timer::Duty::Bit10,
+//!     clock_source: timer::ClockSource::APBClk,
 //!     frequency: Rate::from_khz(24),
 //! })?;
 //!
-//! let mut channel0 = ledc.channel(channel::Number::Channel0, led);
-//! channel0.configure(channel::config::Config {
-//!     timer: &lstimer0,
-//!     duty_pct: 10,
-//!     drive_mode: DriveMode::PushPull,
-//! })?;
+//! // Initialize a new channel with the timer.
+//! let mut channel0 = ledc.channel0.configure(
+//!     channel::Config {
+//!         timer: &timer0,
+//!         duty: 0, // fully off
+//!         pin_config: DriveMode::PushPull,
+//!     },
+//!     led_pin,
+//! )?;
+//!
+//! // Get the duty value to set the light to 100%
+//! let max_duty = channel0.percent_to_duty(100);
 //!
 //! loop {
 //!     // Set up a breathing LED: fade from off to on over a second, then
-//!     // from on back off over the next second.  Then loop.
-//!     channel0.start_duty_fade(0, 100, 1000)?;
+//!     // from on back off over the next second. Then loop.
+//!     channel0.start_duty_fade(0, max_duty, 1000).unwrap();
 //!     while channel0.is_duty_fade_running() {}
-//!     channel0.start_duty_fade(100, 0, 1000)?;
+//!     channel0.start_duty_fade(max_duty, 0, 1000).unwrap();
 //!     while channel0.is_duty_fade_running() {}
 //! }
 //! # }
@@ -67,13 +74,7 @@
 //! - Source clock selection is not supported
 //! - Interrupts are not supported
 
-use self::{
-    channel::Channel,
-    timer::{Timer, TimerSpeed},
-};
 use crate::{
-    gpio::interconnect::PeripheralOutput,
-    pac,
     peripherals::LEDC,
     system::{Peripheral as PeripheralEnable, PeripheralClockControl},
 };
@@ -87,12 +88,6 @@ pub mod timer;
 pub enum LSGlobalClkSource {
     /// APB clock.
     APBClk,
-}
-
-/// LEDC (LED PWM Controller)
-pub struct Ledc<'d> {
-    _instance: LEDC<'d>,
-    ledc: &'d pac::ledc::RegisterBlock,
 }
 
 #[cfg(ledc_version = "1")]
@@ -119,9 +114,78 @@ impl Speed for LowSpeed {
     const IS_HS: bool = false;
 }
 
+/// LEDC (LED PWM Controller)
+pub struct Ledc<'d> {
+    _instance: LEDC<'d>,
+    /// Low Speed Timer 0
+    pub timer0: timer::Timer<LowSpeed>,
+    /// Low Speed Timer 1
+    pub timer1: timer::Timer<LowSpeed>,
+    /// Low Speed Timer 2
+    pub timer2: timer::Timer<LowSpeed>,
+    /// Low Speed Timer 3
+    pub timer3: timer::Timer<LowSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Timer 0
+    pub hs_timer0: timer::Timer<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Timer 1
+    pub hs_timer1: timer::Timer<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Timer 2
+    pub hs_timer2: timer::Timer<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Timer 3
+    pub hs_timer3: timer::Timer<HighSpeed>,
+
+    /// Low Speed Channel 0
+    pub channel0: channel::Channel<LowSpeed>,
+    /// Low Speed Channel 1
+    pub channel1: channel::Channel<LowSpeed>,
+    /// Low Speed Channel 2
+    pub channel2: channel::Channel<LowSpeed>,
+    /// Low Speed Channel 3
+    pub channel3: channel::Channel<LowSpeed>,
+    /// Low Speed Channel 4
+    pub channel4: channel::Channel<LowSpeed>,
+    /// Low Speed Channel 5
+    pub channel5: channel::Channel<LowSpeed>,
+    #[cfg(ledc_channel_count = "8")]
+    /// Low Speed Channel 6
+    pub channel6: channel::Channel<LowSpeed>,
+    #[cfg(ledc_channel_count = "8")]
+    /// Low Speed Channel 7
+    pub channel7: channel::Channel<LowSpeed>,
+
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 0
+    pub hs_channel0: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 1
+    pub hs_channel1: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 2
+    pub hs_channel2: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 3
+    pub hs_channel3: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 4
+    pub hs_channel4: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 5
+    pub hs_channel5: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 6
+    pub hs_channel6: channel::Channel<HighSpeed>,
+    #[cfg(ledc_version = "1")]
+    /// High Speed Channel 7
+    pub hs_channel7: channel::Channel<HighSpeed>,
+}
+
 impl<'d> Ledc<'d> {
     /// Return a new LEDC
-    pub fn new(_instance: LEDC<'d>) -> Self {
+    pub fn new(_instance: LEDC<'d>, clock_source: LSGlobalClkSource) -> Self {
         if PeripheralClockControl::enable(PeripheralEnable::Ledc) {
             PeripheralClockControl::reset(PeripheralEnable::Ledc);
         } else {
@@ -129,27 +193,53 @@ impl<'d> Ledc<'d> {
             // dropping the driver.
             PeripheralClockControl::disable(PeripheralEnable::Ledc);
         }
+        low_level::set_global_slow_clock(LEDC::regs(), clock_source);
 
-        let ledc = LEDC::regs();
-        Ledc { _instance, ledc }
+        Ledc {
+            _instance,
+            timer0: timer::Timer::new(timer::Number::Timer0),
+            timer1: timer::Timer::new(timer::Number::Timer1),
+            timer2: timer::Timer::new(timer::Number::Timer2),
+            timer3: timer::Timer::new(timer::Number::Timer3),
+            #[cfg(ledc_version = "1")]
+            hs_timer0: timer::Timer::new(timer::Number::Timer0),
+            #[cfg(ledc_version = "1")]
+            hs_timer1: timer::Timer::new(timer::Number::Timer1),
+            #[cfg(ledc_version = "1")]
+            hs_timer2: timer::Timer::new(timer::Number::Timer2),
+            #[cfg(ledc_version = "1")]
+            hs_timer3: timer::Timer::new(timer::Number::Timer3),
+            channel0: channel::Channel::new(channel::Number::Channel0),
+            channel1: channel::Channel::new(channel::Number::Channel1),
+            channel2: channel::Channel::new(channel::Number::Channel2),
+            channel3: channel::Channel::new(channel::Number::Channel3),
+            channel4: channel::Channel::new(channel::Number::Channel4),
+            channel5: channel::Channel::new(channel::Number::Channel5),
+            #[cfg(ledc_channel_count = "8")]
+            channel6: channel::Channel::new(channel::Number::Channel6),
+            #[cfg(ledc_channel_count = "8")]
+            channel7: channel::Channel::new(channel::Number::Channel7),
+            #[cfg(ledc_version = "1")]
+            hs_channel0: channel::Channel::new(channel::Number::Channel0),
+            #[cfg(ledc_version = "1")]
+            hs_channel1: channel::Channel::new(channel::Number::Channel1),
+            #[cfg(ledc_version = "1")]
+            hs_channel2: channel::Channel::new(channel::Number::Channel2),
+            #[cfg(ledc_version = "1")]
+            hs_channel3: channel::Channel::new(channel::Number::Channel3),
+            #[cfg(ledc_version = "1")]
+            hs_channel4: channel::Channel::new(channel::Number::Channel4),
+            #[cfg(ledc_version = "1")]
+            hs_channel5: channel::Channel::new(channel::Number::Channel5),
+            #[cfg(ledc_version = "1")]
+            hs_channel6: channel::Channel::new(channel::Number::Channel6),
+            #[cfg(ledc_version = "1")]
+            hs_channel7: channel::Channel::new(channel::Number::Channel7),
+        }
     }
 
     /// Set global slow clock source
     pub fn set_global_slow_clock(&mut self, clock_source: LSGlobalClkSource) {
-        low_level::set_global_slow_clock(self.ledc, clock_source);
-    }
-
-    /// Return a new timer
-    pub fn timer<S: TimerSpeed>(&self, number: timer::Number) -> Timer<'d, S> {
-        Timer::new(self.ledc, number)
-    }
-
-    /// Return a new channel
-    pub fn channel<S: TimerSpeed>(
-        &self,
-        number: channel::Number,
-        output_pin: impl PeripheralOutput<'d>,
-    ) -> Channel<'d, S> {
-        Channel::new(number, output_pin)
+        low_level::set_global_slow_clock(LEDC::regs(), clock_source);
     }
 }
