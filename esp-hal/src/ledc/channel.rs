@@ -13,11 +13,7 @@ use core::marker::PhantomData;
 
 use super::{low_level, timer::TimerSpeed};
 use crate::{
-    gpio::{
-        DriveMode,
-        OutputConfig,
-        interconnect::{self, PeripheralOutput},
-    },
+    gpio::{DriveMode, OutputConfig, interconnect::PeripheralOutput},
     ledc::timer::{Configured as ConfiguredTimer, Timer},
     peripherals::LEDC,
 };
