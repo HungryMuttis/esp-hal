@@ -1,9 +1,15 @@
 use super::super::{
     LSGlobalClkSource,
     channel::Number as ChannelNumber,
-    timer::{LSClockSource, Number as TimerNumber},
+    timer::Number as TimerNumber,
 };
-use crate::{gpio::OutputSignal, pac::ledc::RegisterBlock, soc::clocks, time::Rate};
+use crate::{
+    gpio::OutputSignal,
+    ledc::timer::ClockSource,
+    pac::ledc::RegisterBlock,
+    soc::clocks,
+    time::Rate,
+};
 
 pub(super) fn set_global_slow_clock(ledc: &RegisterBlock, clock_source: LSGlobalClkSource) {
     match clock_source {
@@ -14,7 +20,7 @@ pub(super) fn set_global_slow_clock(ledc: &RegisterBlock, clock_source: LSGlobal
     ledc.timer(0).conf().modify(|_, w| w.para_up().set_bit());
 }
 
-pub(super) fn ls_freq_hw(_clock_source: LSClockSource) -> Rate {
+pub(super) fn ls_freq_hw(_clock_source: ClockSource) -> Rate {
     Rate::from_hz(clocks::apb_clk_frequency())
 }
 
