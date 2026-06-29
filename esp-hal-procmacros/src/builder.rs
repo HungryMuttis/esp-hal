@@ -161,9 +161,11 @@ pub fn builder_lite_derive(item: TokenStream) -> TokenStream {
         }
     }
 
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     let implementation = quote! {
         #[automatically_derived]
-        impl #generics #ident #generics {
+        impl #impl_generics #ident #ty_generics #where_clause {
             #(#fns)*
         }
     };
