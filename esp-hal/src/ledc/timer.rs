@@ -11,10 +11,12 @@
 //!
 //! LEDC uses APB as clock source.
 
+use core::marker::PhantomData;
+
 #[cfg(ledc_version = "1")]
 use super::HighSpeed;
 use super::{LowSpeed, Speed, low_level};
-use crate::{pac, time::Rate};
+use crate::{peripherals::LEDC, time::Rate};
 
 const LEDC_TIMER_DIV_NUM_MAX: u64 = 0x3FFFF;
 
@@ -28,20 +30,10 @@ pub enum Error {
     FrequencyUnset,
 }
 
-#[cfg(ledc_version = "1")]
-/// Clock source for HS Timers
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum HSClockSource {
-    /// APB clock.
-    APBClk,
-    // TODO RefTick,
-}
-
 /// Clock source for LS Timers
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum LSClockSource {
+pub enum ClockSource {
     /// APB clock.
     APBClk,
     // TODO SLOWClk
@@ -61,202 +53,140 @@ pub enum Number {
     Timer3 = 3,
 }
 
+/// Number of bits reserved for duty cycle adjustment
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Duty {
+    /// 1-bit resolution for duty cycle adjustment.
+    Bit1 = 1,
+    /// 2-bit resolution for duty cycle adjustment.
+    Bit2,
+    /// 3-bit resolution for duty cycle adjustment.
+    Bit3,
+    /// 4-bit resolution for duty cycle adjustment.
+    Bit4,
+    /// 5-bit resolution for duty cycle adjustment.
+    Bit5,
+    /// 6-bit resolution for duty cycle adjustment.
+    Bit6,
+    /// 7-bit resolution for duty cycle adjustment.
+    Bit7,
+    /// 8-bit resolution for duty cycle adjustment.
+    Bit8,
+    /// 9-bit resolution for duty cycle adjustment.
+    Bit9,
+    /// 10-bit resolution for duty cycle adjustment.
+    Bit10,
+    /// 11-bit resolution for duty cycle adjustment.
+    Bit11,
+    /// 12-bit resolution for duty cycle adjustment.
+    Bit12,
+    /// 13-bit resolution for duty cycle adjustment.
+    Bit13,
+    /// 14-bit resolution for duty cycle adjustment.
+    Bit14,
+    #[cfg(ledc_version = "1")]
+    /// 15-bit resolution for duty cycle adjustment.
+    Bit15,
+    #[cfg(ledc_version = "1")]
+    /// 16-bit resolution for duty cycle adjustment.
+    Bit16,
+    #[cfg(ledc_version = "1")]
+    /// 17-bit resolution for duty cycle adjustment.
+    Bit17,
+    #[cfg(ledc_version = "1")]
+    /// 18-bit resolution for duty cycle adjustment.
+    Bit18,
+    #[cfg(ledc_version = "1")]
+    /// 19-bit resolution for duty cycle adjustment.
+    Bit19,
+    #[cfg(ledc_version = "1")]
+    /// 20-bit resolution for duty cycle adjustment.
+    Bit20,
+}
+
+impl TryFrom<u32> for Duty {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => Self::Bit1,
+            2 => Self::Bit2,
+            3 => Self::Bit3,
+            4 => Self::Bit4,
+            5 => Self::Bit5,
+            6 => Self::Bit6,
+            7 => Self::Bit7,
+            8 => Self::Bit8,
+            9 => Self::Bit9,
+            10 => Self::Bit10,
+            11 => Self::Bit11,
+            12 => Self::Bit12,
+            13 => Self::Bit13,
+            14 => Self::Bit14,
+            #[cfg(ledc_version = "1")]
+            15 => Self::Bit15,
+            #[cfg(ledc_version = "1")]
+            16 => Self::Bit16,
+            #[cfg(ledc_version = "1")]
+            17 => Self::Bit17,
+            #[cfg(ledc_version = "1")]
+            18 => Self::Bit18,
+            #[cfg(ledc_version = "1")]
+            19 => Self::Bit19,
+            #[cfg(ledc_version = "1")]
+            20 => Self::Bit20,
+            _ => Err(())?,
+        })
+    }
+}
+
 /// Timer configuration
-pub mod config {
-    use crate::time::Rate;
+#[derive(Copy, Clone, Debug, procmacros::BuilderLite)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Config {
+    /// The duty cycle resolution.
+    pub duty: Duty,
+    /// The clock source for the timer.
+    pub clock_source: ClockSource,
+    /// The frequency of the PWM signal in Hertz.
+    pub frequency: Rate,
+}
 
-    /// Number of bits reserved for duty cycle adjustment
-    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    #[allow(clippy::enum_variant_names)] // FIXME: resolve before stabilizing this driver
-    pub enum Duty {
-        /// 1-bit resolution for duty cycle adjustment.
-        Duty1Bit = 1,
-        /// 2-bit resolution for duty cycle adjustment.
-        Duty2Bit,
-        /// 3-bit resolution for duty cycle adjustment.
-        Duty3Bit,
-        /// 4-bit resolution for duty cycle adjustment.
-        Duty4Bit,
-        /// 5-bit resolution for duty cycle adjustment.
-        Duty5Bit,
-        /// 6-bit resolution for duty cycle adjustment.
-        Duty6Bit,
-        /// 7-bit resolution for duty cycle adjustment.
-        Duty7Bit,
-        /// 8-bit resolution for duty cycle adjustment.
-        Duty8Bit,
-        /// 9-bit resolution for duty cycle adjustment.
-        Duty9Bit,
-        /// 10-bit resolution for duty cycle adjustment.
-        Duty10Bit,
-        /// 11-bit resolution for duty cycle adjustment.
-        Duty11Bit,
-        /// 12-bit resolution for duty cycle adjustment.
-        Duty12Bit,
-        /// 13-bit resolution for duty cycle adjustment.
-        Duty13Bit,
-        /// 14-bit resolution for duty cycle adjustment.
-        Duty14Bit,
-        #[cfg(ledc_version = "1")]
-        /// 15-bit resolution for duty cycle adjustment.
-        Duty15Bit,
-        #[cfg(ledc_version = "1")]
-        /// 16-bit resolution for duty cycle adjustment.
-        Duty16Bit,
-        #[cfg(ledc_version = "1")]
-        /// 17-bit resolution for duty cycle adjustment.
-        Duty17Bit,
-        #[cfg(ledc_version = "1")]
-        /// 18-bit resolution for duty cycle adjustment.
-        Duty18Bit,
-        #[cfg(ledc_version = "1")]
-        /// 19-bit resolution for duty cycle adjustment.
-        Duty19Bit,
-        #[cfg(ledc_version = "1")]
-        /// 20-bit resolution for duty cycle adjustment.
-        Duty20Bit,
-    }
-
-    impl TryFrom<u32> for Duty {
-        type Error = ();
-
-        fn try_from(value: u32) -> Result<Self, Self::Error> {
-            Ok(match value {
-                1 => Self::Duty1Bit,
-                2 => Self::Duty2Bit,
-                3 => Self::Duty3Bit,
-                4 => Self::Duty4Bit,
-                5 => Self::Duty5Bit,
-                6 => Self::Duty6Bit,
-                7 => Self::Duty7Bit,
-                8 => Self::Duty8Bit,
-                9 => Self::Duty9Bit,
-                10 => Self::Duty10Bit,
-                11 => Self::Duty11Bit,
-                12 => Self::Duty12Bit,
-                13 => Self::Duty13Bit,
-                14 => Self::Duty14Bit,
-                #[cfg(ledc_version = "1")]
-                15 => Self::Duty15Bit,
-                #[cfg(ledc_version = "1")]
-                16 => Self::Duty16Bit,
-                #[cfg(ledc_version = "1")]
-                17 => Self::Duty17Bit,
-                #[cfg(ledc_version = "1")]
-                18 => Self::Duty18Bit,
-                #[cfg(ledc_version = "1")]
-                19 => Self::Duty19Bit,
-                #[cfg(ledc_version = "1")]
-                20 => Self::Duty20Bit,
-                _ => Err(())?,
-            })
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            duty: Duty::Bit8,
+            clock_source: ClockSource::APBClk,
+            frequency: Rate::from_khz(1),
         }
-    }
-
-    /// Timer configuration
-    #[derive(Copy, Clone)]
-    pub struct Config<CS> {
-        /// The duty cycle resolution.
-        pub duty: Duty,
-        /// The clock source for the timer.
-        pub clock_source: CS,
-        /// The frequency of the PWM signal in Hertz.
-        pub frequency: Rate,
     }
 }
 
 /// Trait defining the type of timer source
 pub trait TimerSpeed: Speed {
-    /// The type of clock source used by the timer in this speed mode.
-    type ClockSourceType;
+    #[doc(hidden)]
+    fn apply_config(num: Number, config: Config) -> Result<bool, Error>;
 }
 
 /// Timer source type for LowSpeed timers
 impl TimerSpeed for LowSpeed {
-    /// The clock source type for low-speed timers.
-    type ClockSourceType = LSClockSource;
-}
-
-#[cfg(ledc_version = "1")]
-/// Timer source type for HighSpeed timers
-impl TimerSpeed for HighSpeed {
-    /// The clock source type for high-speed timers.
-    type ClockSourceType = HSClockSource;
-}
-
-/// Interface for Timers
-pub trait TimerIFace<S: TimerSpeed> {
-    /// Return the frequency of the timer
-    fn freq(&self) -> Option<Rate>;
-
-    /// Configure the timer
-    fn configure(&mut self, config: config::Config<S::ClockSourceType>) -> Result<(), Error>;
-
-    /// Check if the timer has been configured
-    fn is_configured(&self) -> bool;
-
-    /// Return the duty resolution of the timer
-    fn duty(&self) -> Option<config::Duty>;
-
-    /// Return the timer number
-    fn number(&self) -> Number;
-
-    /// Return the timer frequency, or 0 if not configured
-    fn frequency(&self) -> u32;
-}
-
-/// Interface for HW configuration of timer
-pub trait TimerHW<S: TimerSpeed> {
-    /// Get the current source timer frequency from the HW
-    fn freq_hw(&self) -> Option<Rate>;
-
-    /// Configure the HW for the timer
-    fn configure_hw(&self, divisor: u32);
-
-    /// Update the timer in HW
-    fn update_hw(&self);
-}
-
-/// Timer struct
-pub struct Timer<'a, S: TimerSpeed> {
-    ledc: &'a pac::ledc::RegisterBlock,
-    number: Number,
-    duty: Option<config::Duty>,
-    frequency: u32,
-    configured: bool,
-    #[cfg(soc_has_clock_node_ref_tick)]
-    use_ref_tick: bool,
-    clock_source: Option<S::ClockSourceType>,
-}
-
-impl<'a, S: TimerSpeed> TimerIFace<S> for Timer<'a, S>
-where
-    Timer<'a, S>: TimerHW<S>,
-{
-    /// Return the frequency of the timer
-    fn freq(&self) -> Option<Rate> {
-        self.freq_hw()
-    }
-
-    /// Configure the timer
-    fn configure(&mut self, config: config::Config<S::ClockSourceType>) -> Result<(), Error> {
-        self.duty = Some(config.duty);
-        self.clock_source = Some(config.clock_source);
-
-        let src_freq: u32 = self.freq().ok_or(Error::FrequencyUnset)?.as_hz();
+    fn apply_config(number: Number, config: Config) -> Result<bool, Error> {
+        let src_freq: u32 = low_level::ls_freq_hw(config.clock_source).as_hz();
         let precision = 1 << config.duty as u32;
         let frequency: u32 = config.frequency.as_hz();
-        self.frequency = frequency;
 
         #[cfg_attr(not(soc_has_clock_node_ref_tick), expect(unused_mut))]
         let mut divisor = ((src_freq as u64) << 8) / frequency as u64 / precision as u64;
+
+        #[cfg_attr(not(soc_has_clock_node_ref_tick), expect(unused_mut))]
+        let mut use_ref_tick = false;
 
         #[cfg(soc_has_clock_node_ref_tick)]
         if divisor > LEDC_TIMER_DIV_NUM_MAX {
             // APB_CLK results in divisor which too high. Try using REF_TICK as clock
             // source.
-            self.use_ref_tick = true;
+            use_ref_tick = true;
             divisor = (1_000_000u64 << 8) / frequency as u64 / precision as u64;
         }
 
@@ -264,96 +194,117 @@ where
             return Err(Error::Divisor);
         }
 
-        self.configure_hw(divisor as u32);
-        self.update_hw();
-
-        self.configured = true;
-
-        Ok(())
-    }
-
-    /// Check if the timer has been configured
-    fn is_configured(&self) -> bool {
-        self.configured
-    }
-
-    /// Return the duty resolution of the timer
-    fn duty(&self) -> Option<config::Duty> {
-        self.duty
-    }
-
-    /// Return the timer number
-    fn number(&self) -> Number {
-        self.number
-    }
-
-    /// Return the timer frequency
-    fn frequency(&self) -> u32 {
-        self.frequency
-    }
-}
-
-impl<'a, S: TimerSpeed> Timer<'a, S> {
-    /// Create a new instance of a timer
-    pub fn new(ledc: &'a pac::ledc::RegisterBlock, number: Number) -> Self {
-        Timer {
+        let ledc = LEDC::regs();
+        low_level::ls_configure_hw(
             ledc,
             number,
-            duty: None,
-            frequency: 0u32,
-            configured: false,
-            #[cfg(soc_has_clock_node_ref_tick)]
-            use_ref_tick: false,
-            clock_source: None,
-        }
-    }
-}
+            divisor as u32,
+            config.duty as u8,
+            use_ref_tick,
+        );
+        low_level::ls_update_hw(ledc, number);
 
-/// Timer HW implementation for LowSpeed timers
-impl TimerHW<LowSpeed> for Timer<'_, LowSpeed> {
-    /// Get the current source timer frequency from the HW
-    fn freq_hw(&self) -> Option<Rate> {
-        self.clock_source.map(low_level::ls_freq_hw)
-    }
-
-    /// Configure the HW for the timer
-    fn configure_hw(&self, divisor: u32) {
-        let duty = unwrap!(self.duty) as u8;
-        #[cfg(soc_has_clock_node_ref_tick)]
-        let use_ref_tick = self.use_ref_tick;
-        #[cfg(not(soc_has_clock_node_ref_tick))]
-        let use_ref_tick = false;
-        low_level::ls_configure_hw(self.ledc, self.number, divisor, duty, use_ref_tick);
-    }
-
-    /// Update the timer in HW
-    fn update_hw(&self) {
-        low_level::ls_update_hw(self.ledc, self.number);
+        Ok(use_ref_tick)
     }
 }
 
 #[cfg(ledc_version = "1")]
-/// Timer HW implementation for HighSpeed timers
-impl TimerHW<HighSpeed> for Timer<'_, HighSpeed> {
-    /// Get the current source timer frequency from the HW
-    fn freq_hw(&self) -> Option<Rate> {
-        self.clock_source.map(low_level::hs_freq_hw)
-    }
+/// Timer source type for HighSpeed timers
+impl TimerSpeed for HighSpeed {
+    fn apply_config(number: Number, config: Config) -> Result<bool, Error> {
+        let src_freq: u32 = low_level::hs_freq_hw(config.clock_source).as_hz();
+        let precision = 1 << config.duty as u32;
+        let frequency: u32 = config.frequency.as_hz();
 
-    /// Configure the HW for the timer
-    fn configure_hw(&self, divisor: u32) {
-        let duty = unwrap!(self.duty) as u8;
+        let divisor = ((src_freq as u64) << 8) / frequency as u64 / precision as u64;
+
+        if !(256..=LEDC_TIMER_DIV_NUM_MAX).contains(&divisor) {
+            return Err(Error::Divisor);
+        }
+
+        let ledc = LEDC::regs();
         low_level::hs_configure_hw(
-            self.ledc,
-            self.number,
-            divisor,
-            duty,
-            unwrap!(self.clock_source),
+            ledc,
+            number,
+            divisor as u32,
+            config.duty as u8,
+            config.clock_source,
         );
+        low_level::hs_update_hw();
+
+        Ok(false)
+    }
+}
+
+/// Typestate indicating an unconfigured timer.
+#[derive(Clone, Copy, Debug)]
+pub struct Unconfigured;
+
+/// Typestate indicating a configured timer.
+#[derive(Clone, Copy, Debug)]
+pub struct Configured {
+    pub(crate) config: Config,
+    #[cfg(soc_has_clock_node_ref_tick)]
+    pub(crate) use_ref_tick: bool,
+}
+
+/// Timer struct
+#[derive(Debug)]
+pub struct Timer<S: TimerSpeed, State = Unconfigured> {
+    _phantom: PhantomData<S>,
+    number: Number,
+    state: State,
+}
+
+impl<S: TimerSpeed> Timer<S, Unconfigured> {
+    /// Create a new instance of a timer
+    pub(crate) fn new(number: Number) -> Self {
+        Self {
+            _phantom: PhantomData,
+            number,
+            state: Unconfigured,
+        }
     }
 
-    /// Update the timer in HW
-    fn update_hw(&self) {
-        low_level::hs_update_hw();
+    /// Configure the timer
+    pub fn configure(self, config: Config) -> Result<Timer<S, Configured>, Error> {
+        #[cfg_attr(not(soc_has_clock_node_ref_tick), expect(unused))]
+        let use_ref_tick = S::apply_config(self.number, config)?;
+
+        Ok(Timer {
+            _phantom: PhantomData,
+            number: self.number,
+            state: Configured {
+                config,
+                #[cfg(soc_has_clock_node_ref_tick)]
+                use_ref_tick,
+            },
+        })
+    }
+}
+
+impl<S: TimerSpeed> Timer<S, Configured> {
+    /// Returns the current configuration of the timer
+    pub fn config(&self) -> Config {
+        self.state.config
+    }
+
+    /// Returns the timer number
+    pub fn number(&self) -> Number {
+        self.number
+    }
+
+    /// Reconfigures the timer with new settings
+    pub fn reconfigure(&mut self, config: Config) -> Result<(), Error> {
+        #[cfg_attr(not(soc_has_clock_node_ref_tick), expect(unused))]
+        let use_ref_tick = S::apply_config(self.number, config)?;
+
+        self.state.config = config;
+        #[cfg(soc_has_clock_node_ref_tick)]
+        {
+            self.state.use_ref_tick = use_ref_tick;
+        }
+
+        Ok(())
     }
 }
